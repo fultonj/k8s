@@ -23,18 +23,10 @@ export KUBECONFIG=/home/ocp/cluster_mgnt_roles/kubeconfig.ostest
 
 ### Use Heat and config-download to generate playbooks
 
+```
+make openstack
+```
 Make sure `oc get pods -n openstack` shows an `openstackclient` pod.
-Start the playbook containers let them finish.
-```
-make playbook_generator
-```
-You should see `/root/ostest-working/yamls/playbook_generator/`
-has a recent timestamp.
-
-If the above fails use `oc delete osplaybookgenerator --all` to
-destroy it and try `make playbook_generator` again but follow
-the logs as described in debugging below.
-
 
 ### Configure overcloud once playbooks have been created
 ```
@@ -104,6 +96,14 @@ Then see "Deploy Overcloud" above.
 See the [Makefile](https://github.com/openstack-k8s-operators/osp-director-dev-tools/blob/master/ansible/Makefile) for details on what these commands do.
 
 ## Debugging
+
+### Recreate playbooks
+```
+oc delete osplaybookgenerator --all
+make playbook_generator
+```
+You should see `/root/ostest-working/yamls/playbook_generator/`
+has a recent timestamp.
 
 ### Debugging Playbook Generator
 ```
