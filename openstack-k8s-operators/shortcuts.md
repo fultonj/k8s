@@ -122,12 +122,33 @@ is sufficient to generate the playbooks.
 
 ### Checking the Contents of the Heat Templates
 
+Custom templates:
+```
+ls /root/ostest-working/yamls/tripleo_deploy/
+cat /root/ostest-working/yamls/tripleo_deploy/storage-backend.yaml
+```
+Network config and roles data YAMLs:
+```
+ls /root/ostest-working/yamls/tripleo_deploy_tarball/
+cat /root/ostest-working/yamls/tripleo_deploy_tarball/roles_data.yaml
+```
+If the above was not produced you can check what got into the config
+[ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap).
+```
+oc get cm tripleo-deploy-config-custom -o yaml
+oc get cm tripleo-deploy-config-custom -o json | jq .data
+```
+Check the network config and roles data YAMLs:
 ```
 oc get cm tripleo-tarball-config -o yaml
 oc get cm tripleo-tarball-config -o json | jq .binaryData > /tmp/test
+vi /tmp/test
+```
+At this point you'll need to edit /tmp/test to extract only the
+payload. I.e. remove the json and the key and keep only the value.
+You can then do the following to extract the tarball.
+```
 cat /tmp/test |base64 -d > /tmp/test.tgz
 file /tmp/test.tgz
 tar tfvz /tmp/test.tgz
-cat /root/ostest-working/yamls/tripleo_deploy/storage-backend.yaml 
-source /root/ostest-working/oc_env.sh
 ```
