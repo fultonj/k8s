@@ -28,13 +28,16 @@ make openstack
 ```
 Make sure `oc get pods -n openstack` shows an `openstackclient` pod.
 
-### Configure overcloud once playbooks have been created
+### Genereate the playbooks inside the openstackclient pod
 ```
 oc rsh openstackclient
 cd /home/cloud-admin/
 ./tripleo-deploy.sh -a 
-./tripleo-deploy.sh -p
 ```
+To deploy the overcloud you used to need to run the above
+and then run `./tripleo-deploy.sh -p` but Ansible now does
+this for you.
+
 See also the
 [openstack-k8s-operators readme section on deploying OpenStack](https://github.com/openstack-k8s-operators/osp-director-operator#deploying-openstack-once-you-have-the-osp-director-operator-installed).
 
@@ -47,8 +50,11 @@ cd /home/cloud-admin/playbooks/tripleo-ansible
 ## Connect to openstack client to create an instance after deployment
 ```
 oc -n openstack rsh openstackclient
-egrep "auth_url|password" /home/cloud-admin/tripleo-deploy/clouds.yaml 
+egrep "auth_url|password" /home/cloud-admin/.config/openstack/clouds.yaml
 ```
+
+If the deployment succeeded then the above file should be present.
+
 Substitute the PASS and URL below
 ```
 export OS_PASSWORD=$PASS
@@ -122,12 +128,33 @@ is sufficient to generate the playbooks.
 
 ### Checking the Contents of the Heat Templates
 
+Custom templates:
+```
+ls /root/ostest-working/yamls/tripleo_deploy/
+cat /root/ostest-working/yamls/tripleo_deploy/storage-backend.yaml
+```
+Network config and roles data YAMLs:
+```
+ls /root/ostest-working/yamls/tripleo_deploy_tarball/
+cat /root/ostest-working/yamls/tripleo_deploy_tarball/roles_data.yaml
+```
+If the above was not produced you can check what got into the config
+[ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap).
+```
+oc get cm tripleo-deploy-config-custom -o yaml
+oc get cm tripleo-deploy-config-custom -o json | jq .data
+```
+Check the network config and roles data YAMLs:
 ```
 oc get cm tripleo-tarball-config -o yaml
 oc get cm tripleo-tarball-config -o json | jq .binaryData > /tmp/test
+vi /tmp/test
+```
+At this point you'll need to edit /tmp/test to extract only the
+payload. I.e. remove the json and the key and keep only the value.
+You can then do the following to extract the tarball.
+```
 cat /tmp/test |base64 -d > /tmp/test.tgz
 file /tmp/test.tgz
 tar tfvz /tmp/test.tgz
-cat /root/ostest-working/yamls/tripleo_deploy/storage-backend.yaml 
-source /root/ostest-working/oc_env.sh
 ```
