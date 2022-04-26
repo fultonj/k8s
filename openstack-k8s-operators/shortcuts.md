@@ -6,17 +6,20 @@ to deploy OCP, CNV, Metal3, and the OpenStack operator.
 
 Note the [Makefile](https://github.com/openstack-k8s-operators/osp-director-dev-tools/blob/master/ansible/Makefile).
 
+```
+make OSP_RELEASE=17.0
+```
 
 ## Web Interface
 ```
 username: kubeadmin
-password: `cat /home/ocp/cluster_mgnt_roles/kubeadmin-password.ostest`
+password: `cat /home/ocp/crucible/kubeadmin-password.ostest`
 ```
 
 
 ## Authenticate
 ```
-export KUBECONFIG=/home/ocp/cluster_mgnt_roles/kubeconfig.ostest
+export KUBECONFIG=/home/ocp/crucible/kubeconfig.ostest
 ```
 
 ## Deploy Overcloud
@@ -28,11 +31,11 @@ make openstack
 ```
 Make sure `oc get pods -n openstack` shows an `openstackclient` pod.
 
-### Genereate the playbooks inside the openstackclient pod
+### Connect to the openstackclient pod
 ```
-oc rsh openstackclient
+export KUBECONFIG=/home/ocp/crucible/kubeconfig.ostest
+oc exec -it openstackclient -n openstack /bin/bash
 cd /home/cloud-admin/
-./tripleo-deploy.sh -a 
 ```
 To deploy the overcloud you used to need to run the above
 and then run `./tripleo-deploy.sh -p` but Ansible now does
