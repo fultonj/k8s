@@ -402,6 +402,140 @@ FATA[0002] Failed to get OLM status: error getting installed OLM version (set --
 [fultonj@osp-storage-01 memcached-operator]$ 
 ```
 
+### Build Image
+
+I'll try the
+[variation](https://docs.openshift.com/container-platform/4.11/operators/operator_sdk/golang/osdk-golang-tutorial.html#osdk-run-deployment_osdk-golang-tutorial)
+of the same tutorial but for OpenShift and post my image to:
+https://quay.io/repository/fultonj/memcached-operator
+
+
+They suggested:
+
+`make docker-build IMG=<registry>/<user>/<image_name>:<tag>`
+
+So I used:
+
+`make docker-build IMG=quay.io/repository/fultonj/memcached-operator:latest`
+
+And got this:.
+
+```
+[fultonj@osp-storage-01 memcached-operator]$ make docker-build IMG=quay.io/repository/fultonj/memcached-operator:latest
+/home/fultonj/projects/memcached-operator/bin/controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+/home/fultonj/projects/memcached-operator/bin/controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
+go fmt ./...
+go vet ./...
+GOBIN=/home/fultonj/projects/memcached-operator/bin go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+go: downloading sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20220826133025-d9593cf31dc0
+go: downloading github.com/spf13/afero v1.6.0
+KUBEBUILDER_ASSETS="/home/fultonj/.local/share/kubebuilder-envtest/k8s/1.24.1-linux-amd64" go test ./... -coverprofile cover.out
+?   	github.com/example/memcached-operator	[no test files]
+?   	github.com/example/memcached-operator/api/v1alpha1	[no test files]
+ok  	github.com/example/memcached-operator/controllers	5.064s	coverage: 0.0% of statements
+docker build -t quay.io/repository/fultonj/memcached-operator:latest .
+bash: docker: command not found
+make: *** [Makefile:121: docker-build] Error 127
+[fultonj@osp-storage-01 memcached-operator]$ 
+```
+
+This is easy to work around by updating the following in the Makefile:
+
+Old:
+```
+docker-build: test ## Build docker image with the manager.
+	docker build -t ${IMG} .
+```
+
+New:
+```
+docker-build: test ## Build docker image with the manager.
+	podman build -t ${IMG} .
+```
+
+I selected `docker.io/library/golang:1.18` when prompted during `[1/2]
+STEP 1/9: FROM golang:1.18 AS builder`.
+
+It then finished with this:
+
+ ```
+[2/2] STEP 1/5: FROM gcr.io/distroless/static:nonroot
+Trying to pull gcr.io/distroless/static:nonroot...
+Getting image source signatures
+Copying blob 0a602d5f6ca3 done  
+Copying config eac86ae509 done  
+Writing manifest to image destination
+Storing signatures
+[2/2] STEP 2/5: WORKDIR /
+--> 0629d50967d
+[2/2] STEP 3/5: COPY --from=builder /workspace/manager .
+--> 0b75d88681c
+[2/2] STEP 4/5: USER 65532:65532
+--> d4c132c45df
+[2/2] STEP 5/5: ENTRYPOINT ["/manager"]
+[2/2] COMMIT quay.io/repository/fultonj/memcached-operator:latest
+--> b883d61541a
+Successfully tagged quay.io/repository/fultonj/memcached-operator:latest
+b883d61541a7c348e1d908e5e0600909538affe739a27ddbbf0a5957df100c88
+[fultonj@osp-storage-01 memcached-operator]$ 
+```
+
+When I then tried to run this:
+
+`make docker-push IMG=quay.io/repository/fultonj/memcached-operator:latest`
+
+I got an authentication issue. 
+
+```
+[fultonj@osp-storage-01 memcached-operator]$ make docker-push IMG=quay.io/repository/fultonj/memcached-operator:latest
+podman push quay.io/repository/fultonj/memcached-operator:latest
+Getting image source signatures
+Error: trying to reuse blob sha256:c456571abc85581a0ac79dbfe2b13d71d8049c24042db7be14838a55499e4ffd at destination: checking whether a blob sha256:c456571abc85581a0ac79dbfe2b13d71d8049c24042db7be14838a55499e4ffd exists in quay.io/repository/fultonj/memcached-operator: unauthorized: authentication required
+make: *** [Makefile:125: docker-push] Error 125
+[fultonj@osp-storage-01 memcached-operator]$ 
+```
+
+So I need to have my environment use my quay.io password. I used the
+quay.io web interface to create an encrypted password. First I
+verified the pasword worked for podman login:
+
+  `podman login -u="fultonj" -p="********" quay.
+  
+Then I used the web interface to download a k8s secret which I
+introced into the namespace where my operators is running (`oc get
+namespaces`). I was then able to add the secret:
+
+```
+[fultonj@osp-storage-01 ~]$ kubectl create -f fultonj-secret.yml --namespace=memcached-operator-system
+secret/fultonj-pull-secret created
+[fultonj@osp-storage-01 ~]$ 
+```
+
+I know I'm supposed to add something like the following to my project
+but I'm not sure where.
+
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: memcached-operator
+  namespace: memcached-operator-system
+spec:
+  containers:
+    - name: memcached-operator
+      image: quay.io/fultonj/memcached-operator
+  
+  imagePullSecrets:
+    - name: fultonj-pull-secret
+```
+
+Do I aded it in `config/manager/manager.yaml`?
+
+Is there something to this?
+
+  https://github.com/operator-framework/operator-sdk/issues/4650#issuecomment-804520010
+
+
 ## Todo
 
 - OLM
