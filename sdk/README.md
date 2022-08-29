@@ -11,7 +11,7 @@ https://docs.openshift.com/container-platform/4.11/operators/operator_sdk/golang
 ## Prerequisites
 
 I'm using CRC on RHEL8.5. I installed the operator sdk by following 
-[this](https://docs.openshift.com/container-platform/4.11/operators/operator_sdk/osdk-installing-cli.html#osdk-installing-cli)].
+[this](https://docs.openshift.com/container-platform/4.11/operators/operator_sdk/osdk-installing-cli.html#osdk-installing-cli).
 I ran the following.
 
 ```
@@ -562,7 +562,7 @@ Now using project "memcached-operator-system" on server "https://api.crc.testing
 Update `config/samples/cache_v1alpha1_memcached.yaml` (not
 `config/samples/cache_v1_memcached.yaml`).
 
-This is where I realize where (probably0 the quay.io example yaml for
+This is where I realize where (probably) the quay.io example yaml for
 my project's CR manifest is supposed to go. In addition to adding
 `size: 3` as per the tutorial I also add the `containers` and 
 `imagePullSecrets`.
@@ -622,7 +622,6 @@ reurnning `oc apply -f ` after editing cache_v1alpha1_memcached.yaml.
 I can confirm that `oc get memcached/memcached-sample -o yaml`
 no longer shows `containers` and `imagePullSecrets`.
 
-My deployments are still stuck though:
 ```
 [fultonj@osp-storage-01 memcached-operator]$ oc get deployments
 NAME                                    READY   UP-TO-DATE   AVAILABLE   AGE
@@ -631,9 +630,57 @@ memcached-sample                        0/3     0            0           7m51s
 [fultonj@osp-storage-01 memcached-operator]$ 
 ```
 
-The next steps are to change the size from 3 to 5 and observe five
-pods running. Then it's just a matter of doing `make undeploy` and
-`operator-sdk cleanup memcached-operator`.
+I increased the count to 5
+```
+[fultonj@osp-storage-01 memcached-operator]$ oc patch memcached memcached-sample \
+>     -p '{"spec":{"size": 5}}' \
+>     --type=merge
+memcached.cache.example.com/memcached-sample patched
+[fultonj@osp-storage-01 memcached-operator]$ oc get deployments
+NAME                                    READY   UP-TO-DATE   AVAILABLE   AGE
+memcached-operator-controller-manager   1/1     1            1           6m22s
+memcached-sample                        0/5     0            0           4m41s
+[fultonj@osp-storage-01 memcached-operator]$ 
+```
 
-So my next step is to trouble shoot so I can complete the tutorial.
+and then lowered it to 1:
+```
+[fultonj@osp-storage-01 memcached-operator]$ oc patch memcached memcached-sample     -p '{"spec":{"size": 1}}'     --type=merge
+memcached.cache.example.com/memcached-sample patched
+[fultonj@osp-storage-01 memcached-operator]$ oc get deployments
+NAME                                    READY   UP-TO-DATE   AVAILABLE   AGE
+memcached-operator-controller-manager   1/1     1            1           7m1s
+memcached-sample                        0/1     0            0           5m20s
+[fultonj@osp-storage-01 memcached-operator]$ 
+```
 
+However, it's still not running.
+
+```
+POD=$(oc get pods | awk {'print $1'} | grep memcached)
+oc logs $POD
+```
+
+```
+[fultonj@osp-storage-01 memcached-operator]$ oc logs $POD | tail -1 
+1.661793396634543e+09	INFO	Creating a new Deployment	{"controller": "memcached", "controllerGroup": "cache.example.com", "controllerKind": "Memcached", "memcached": {"name":"memcached-sample","namespace":"memcached-operator-system"}, "namespace": "memcached-operator-system", "name": "memcached-sample", "reconcileID": "24bf4f91-e9a1-4ce4-b18e-d05238283edb", "Deployment.Namespace": "memcached-operator-system", "Deployment.Name": "memcached-sample"}
+[fultonj@osp-storage-01 memcached-operator]$ 
+```
+
+I recreated like this:
+
+```
+make undeploy
+make deploy IMG=quay.io/fultonj/memcached-operator:latest
+oc apply -f config/samples/cache_v1alpha1_memcached.yaml
+```
+
+I then used the commands below to monitor.
+
+```
+oc get deployments
+oc get pods
+
+POD=$(oc get pods | awk {'print $1'} | grep memcached)
+oc logs $POD
+```
