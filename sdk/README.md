@@ -361,7 +361,7 @@ deployment.apps/memcached-operator-controller-manager created
 [fultonj@osp-storage-01 memcached-operator]$
 ```
 
-And see that it is running:
+And see that it tried to start.
 
 ```
 [fultonj@osp-storage-01 memcached-operator]$ kubectl get deployment -n memcached-operator-system
@@ -378,13 +378,14 @@ memcached-operator-system                    memcached-operator-controller-manag
 [fultonj@osp-storage-01 memcached-operator]$ 
 ```
 
+I'll build and push my own image as per the next step and try again.
+
 ### Build and Push Image
 
 I'll try the
 [variation](https://docs.openshift.com/container-platform/4.11/operators/operator_sdk/golang/osdk-golang-tutorial.html#osdk-run-deployment_osdk-golang-tutorial)
 of the same tutorial but for OpenShift and post my image to:
 https://quay.io/repository/fultonj/memcached-operator
-
 
 They suggested:
 
@@ -471,6 +472,56 @@ Note: The URL to view it might be:
 
 but do not run `docker-push` with 'repository' in the IMG variable.
 
+When I then ran:
+
+```
+make deploy IMG=quay.io/fultonj/memcached-operator:latest
+```
+
+It complained that this file existed and suggested I remove it so I did.
+
+```
+[fultonj@osp-storage-01 memcached-operator]$ ls -lh bin/kustomize 
+-rwxr-xr-x. 1 fultonj fultonj 33M Aug 27 19:40 bin/kustomize
+[fultonj@osp-storage-01 memcached-operator]$ 
+```
+
+I was then able to see my operator running:
+
+```
+[fultonj@osp-storage-01 memcached-operator]$ make deploy IMG=quay.io/fultonj/memcached-operator:latest
+GOBIN=/home/fultonj/projects/memcached-operator/bin go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.9.0
+/home/fultonj/projects/memcached-operator/bin/controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s -- 3.8.7 /home/fultonj/projects/memcached-operator/bin
+{Version:kustomize/v3.8.7 GitCommit:ad092cc7a91c07fdf63a2e4b7f13fa588a39af4f BuildDate:2020-11-11T23:14:14Z GoOs:linux GoArch:amd64}
+kustomize installed to /home/fultonj/projects/memcached-operator/bin/kustomize
+cd config/manager && /home/fultonj/projects/memcached-operator/bin/kustomize edit set image controller=quay.io/fultonj/memcached-operator:latest
+/home/fultonj/projects/memcached-operator/bin/kustomize build config/default | kubectl apply -f -
+namespace/memcached-operator-system unchanged
+customresourcedefinition.apiextensions.k8s.io/memcacheds.cache.example.com unchanged
+serviceaccount/memcached-operator-controller-manager unchanged
+role.rbac.authorization.k8s.io/memcached-operator-leader-election-role unchanged
+clusterrole.rbac.authorization.k8s.io/memcached-operator-manager-role configured
+clusterrole.rbac.authorization.k8s.io/memcached-operator-metrics-reader unchanged
+clusterrole.rbac.authorization.k8s.io/memcached-operator-proxy-role unchanged
+rolebinding.rbac.authorization.k8s.io/memcached-operator-leader-election-rolebinding unchanged
+clusterrolebinding.rbac.authorization.k8s.io/memcached-operator-manager-rolebinding unchanged
+clusterrolebinding.rbac.authorization.k8s.io/memcached-operator-proxy-rolebinding unchanged
+configmap/memcached-operator-manager-config configured
+service/memcached-operator-controller-manager-metrics-service unchanged
+deployment.apps/memcached-operator-controller-manager configured
+[fultonj@osp-storage-01 memcached-operator]$ oc get deployment -n memcached-operator-system
+NAME                                    READY   UP-TO-DATE   AVAILABLE   AGE
+memcached-operator-controller-manager   1/1     1            1           45h
+[fultonj@osp-storage-01 memcached-operator]$ 
+```
+
+I see it running:
+```
+[fultonj@osp-storage-01 memcached-operator]$ oc get pods -A| grep mem
+memcached-operator-system                    memcached-operator-controller-manager-547c6cfdcd-4484c            2/2     Running             0               3m53s
+[fultonj@osp-storage-01 memcached-operator]$ 
+```
 
 ### OLM
 
@@ -495,10 +546,94 @@ FATA[0002] Failed to get OLM status: error getting installed OLM version (set --
 [fultonj@osp-storage-01 memcached-operator]$ 
 ```
 
-## Todo
+Technically, I can modify a patch to one of the OpenStack operators
+and run it outside of OLM to test my change so this won't block me.
 
-- OLM
-- Create a CR
-- Update the size
-- Clean Up
+## Create a CR
+
+Continuing with the [OCP variation of the tutorial](https://docs.openshift.com/container-platform/4.11/operators/operator_sdk/golang/osdk-golang-tutorial.html#osdk-create-cr_osdk-golang-tutorial)
+
+```
+[fultonj@osp-storage-01 memcached-operator]$ oc project memcached-operator-system
+Now using project "memcached-operator-system" on server "https://api.crc.testing:6443".
+[fultonj@osp-storage-01 memcached-operator]$ 
+```
+
+Update `config/samples/cache_v1alpha1_memcached.yaml` (not
+`config/samples/cache_v1_memcached.yaml`).
+
+This is where I realize where (probably0 the quay.io example yaml for
+my project's CR manifest is supposed to go. In addition to adding
+`size: 3` as per the tutorial I also add the `containers` and 
+`imagePullSecrets`.
+
+```
+spec:
+  size: 3
+  containers:
+    - name: memcached-operator
+      image: quay.io/fultonj/memcached-operator
+  
+  imagePullSecrets:
+    - name: fultonj-pull-secret
+```
+
+I then create the CR:
+```
+oc apply -f config/samples/cache_v1alpha1_memcached.yaml
+```
+
+I see it hasn't yet created the 3 of them.
+
+```
+[fultonj@osp-storage-01 memcached-operator]$ oc get deployments
+NAME                                    READY   UP-TO-DATE   AVAILABLE   AGE
+memcached-operator-controller-manager   1/1     1            1           45h
+memcached-sample                        0/3     0            0           101s
+[fultonj@osp-storage-01 memcached-operator]$ oc get pods
+NAME                                                     READY   STATUS    RESTARTS   AGE
+memcached-operator-controller-manager-547c6cfdcd-4484c   2/2     Running   0          16m
+[fultonj@osp-storage-01 memcached-operator]$ 
+```
+I see my updated CR is known.
+```
+[fultonj@osp-storage-01 memcached-operator]$ oc get memcached/memcached-sample -o yaml
+apiVersion: cache.example.com/v1alpha1
+kind: Memcached
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"cache.example.com/v1alpha1","kind":"Memcached","metadata":{"annotations":{},"name":"memcached-sample","namespace":"memcached-operator-system"},"spec":{"containers":[{"image":"quay.io/fultonj/memcached-operator","name":"memcached-operator"}],"imagePullSecrets":[{"name":"fultonj-pull-secret"}],"size":3}}
+  creationTimestamp: "2022-08-29T17:16:36Z"
+  generation: 1
+  name: memcached-sample
+  namespace: memcached-operator-system
+  resourceVersion: "1313898"
+  uid: a4ba989d-69c3-4b09-8d9d-b0c560f3bb62
+spec:
+  size: 3
+[fultonj@osp-storage-01 memcached-operator]$ 
+```
+
+I'll remove the `containers` and `imagePullSecrets` since that might
+be way it's unable to get past 0/3. I see my updated definition after 
+reurnning `oc apply -f ` after editing cache_v1alpha1_memcached.yaml.
+
+I can confirm that `oc get memcached/memcached-sample -o yaml`
+no longer shows `containers` and `imagePullSecrets`.
+
+My deployments are still stuck though:
+```
+[fultonj@osp-storage-01 memcached-operator]$ oc get deployments
+NAME                                    READY   UP-TO-DATE   AVAILABLE   AGE
+memcached-operator-controller-manager   1/1     1            1           45h
+memcached-sample                        0/3     0            0           7m51s
+[fultonj@osp-storage-01 memcached-operator]$ 
+```
+
+The next steps are to change the size from 3 to 5 and observe five
+pods running. Then it's just a matter of doing `make undeploy` and
+`operator-sdk cleanup memcached-operator`.
+
+So my next step is to trouble shoot so I can complete the tutorial.
 
